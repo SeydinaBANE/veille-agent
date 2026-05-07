@@ -35,7 +35,22 @@ cp .env.example .env
 # Renseigner OPENROUTER_API_KEY dans .env
 ```
 
-## Utilisation
+## Interface web
+
+```bash
+uv run uvicorn ui.api:app --reload --port 8000
+```
+
+Ouvre `http://localhost:8000` — 4 pages disponibles :
+
+| Page | Rôle |
+|---|---|
+| **Nouveau scan** | Lancer un scan par secteur, suivre la progression en temps réel |
+| **Rapports** | Consulter et lire les rapports Markdown générés |
+| **Concurrents** | Liste des concurrents suivis avec date de dernier scan |
+| **Historique** | Tous les scans passés avec durée et nombre de changements détectés |
+
+## Utilisation CLI
 
 ```bash
 # Secteur par défaut
@@ -54,6 +69,10 @@ Le rapport est généré dans `output/reports/rapport_<date>_<secteur>.md`.
 ```
 veille-agent/
 ├── main.py                  # Orchestration LangGraph (StateGraph)
+├── ui/
+│   ├── api.py               # Backend FastAPI (7 routes)
+│   └── templates/
+│       └── index.html       # Frontend SPA vanilla JS
 ├── discovery_agent/         # Identification des concurrents
 ├── scraper_agent/           # Scraping web
 ├── social_agent/            # Scraping LinkedIn & Twitter
