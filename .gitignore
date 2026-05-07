@@ -1,0 +1,19 @@
+# Environnement
+.env
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Snapshots (données locales, pas à versionner)
+storage/snapshots/*.json
+
+# Rapports générés
+output/reports/*.md
+
+# IDE
+.vscode/
+.idea/

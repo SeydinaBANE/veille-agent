@@ -1,0 +1,20 @@
+[project]
+name = "veille-agent"
+version = "0.1.0"
+description = "Agent de veille concurrentielle multi-agent avec LangGraph"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.40.0",
+    "langgraph>=0.2.0",
+    "python-dotenv>=1.0.0",
+    "requests>=2.32.0",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.0.0",
+]
+
+[build-system]
+requires = ["setuptools>=42"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
