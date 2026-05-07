@@ -13,7 +13,17 @@ uv run python main.py "fintech SaaS" # lance un scan de veille
 
 Copier `.env.example` vers `.env` et renseigner `OPENROUTER_API_KEY`. Tous les appels LLM passent par [OpenRouter](https://openrouter.ai) via le SDK Anthropic avec un `base_url` personnalisé.
 
-## Lancer le pipeline
+## Lancer l'UI
+
+```bash
+uv run uvicorn ui.api:app --reload --port 8000
+# → http://localhost:8000
+```
+
+L'interface expose 4 pages : **Nouveau scan**, **Rapports**, **Concurrents**, **Historique**.  
+Le backend FastAPI lance le pipeline en tâche de fond et expose son état via `/api/scan/status` (polling toutes les 2s).
+
+## Lancer le pipeline (CLI)
 
 ```bash
 # Secteur par défaut
