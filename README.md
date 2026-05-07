@@ -45,10 +45,26 @@ Ouvre `http://localhost:8000` — 4 pages disponibles :
 
 | Page | Rôle |
 |---|---|
-| **Nouveau scan** | Lancer un scan par secteur, suivre la progression en temps réel |
-| **Rapports** | Consulter et lire les rapports Markdown générés |
+| **Nouveau scan** | Lancer un scan, configurer la planification automatique |
+| **Rapports** | Consulter et télécharger les rapports Markdown générés |
 | **Concurrents** | Liste des concurrents suivis avec date de dernier scan |
 | **Historique** | Tous les scans passés avec durée et nombre de changements détectés |
+
+### Planification automatique
+
+Depuis la page "Nouveau scan", active le scan automatique en choisissant un secteur, un jour et une heure. La config est persistée dans `storage/schedule.json`.
+
+### Notifications
+
+Quand un concurrent atteint un score ≥ 7/10, une alerte est envoyée automatiquement. Configure les canaux dans `.env` :
+
+| Variable | Canal |
+|---|---|
+| `SMTP_USER` / `SMTP_PASS` / `NOTIFY_EMAIL` | Email (Gmail SMTP) |
+| `SLACK_WEBHOOK_URL` | Slack |
+| `DISCORD_WEBHOOK_URL` | Discord |
+
+Les 3 sont optionnels — seuls les canaux configurés reçoivent la notification.
 
 ## Utilisation CLI
 
@@ -70,9 +86,11 @@ Le rapport est généré dans `output/reports/rapport_<date>_<secteur>.md`.
 veille-agent/
 ├── main.py                  # Orchestration LangGraph (StateGraph)
 ├── ui/
-│   ├── api.py               # Backend FastAPI (7 routes)
+│   ├── api.py               # Backend FastAPI (routes + scheduler)
 │   └── templates/
 │       └── index.html       # Frontend SPA vanilla JS
+├── notifier/
+│   └── notify.py            # Notifications Email / Slack / Discord
 ├── discovery_agent/         # Identification des concurrents
 ├── scraper_agent/           # Scraping web
 ├── social_agent/            # Scraping LinkedIn & Twitter
@@ -81,7 +99,8 @@ veille-agent/
 ├── report_agent/            # Génération du rapport
 ├── storage/
 │   ├── snapshot.py          # CRUD JSON des snapshots
-│   └── snapshots/           # Données persistées par concurrent
+│   ├── snapshots/           # Données persistées par concurrent
+│   └── schedule.json        # Config planification automatique
 └── output/reports/          # Rapports générés
 ```
 
@@ -90,6 +109,10 @@ veille-agent/
 | Variable | Description |
 |---|---|
 | `OPENROUTER_API_KEY` | Clé API OpenRouter (obligatoire) |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` | Config SMTP pour les notifications email |
+| `NOTIFY_EMAIL` | Destinataire des alertes email |
+| `SLACK_WEBHOOK_URL` | Webhook Slack |
+| `DISCORD_WEBHOOK_URL` | Webhook Discord |
 
 ## Exemple de rapport généré
 
