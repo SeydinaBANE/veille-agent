@@ -476,6 +476,40 @@
         <div class="stat-label">CONCURRENTS SUIVIS</div>
       </div>
     </div>
+
+    <div class="card">
+      <div class="card-title">Planification automatique</div>
+      <div class="form-row">
+        <div class="form-group" style="flex:0;min-width:110px">
+          <label>Activer</label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding-top:11px">
+            <input type="checkbox" id="schedule-enabled" onchange="saveSchedule()" style="width:auto;accent-color:var(--accent)">
+            <span style="font-family:var(--mono);font-size:12px;color:var(--text2)">scan auto</span>
+          </label>
+        </div>
+        <div class="form-group">
+          <label>Secteur</label>
+          <input type="text" id="schedule-sector" placeholder="ex: paiement en ligne SaaS" oninput="saveSchedule()" />
+        </div>
+        <div class="form-group" style="flex:0">
+          <label>Jour</label>
+          <select id="schedule-day" onchange="saveSchedule()" style="width:110px">
+            <option value="monday">Lundi</option>
+            <option value="tuesday">Mardi</option>
+            <option value="wednesday">Mercredi</option>
+            <option value="thursday">Jeudi</option>
+            <option value="friday">Vendredi</option>
+            <option value="saturday">Samedi</option>
+            <option value="sunday">Dimanche</option>
+          </select>
+        </div>
+        <div class="form-group" style="flex:0">
+          <label>Heure</label>
+          <input type="number" id="schedule-hour" value="8" min="0" max="23" oninput="saveSchedule()" />
+        </div>
+      </div>
+      <div id="schedule-status" style="font-family:var(--mono);font-size:11px;color:var(--text3);margin-top:8px"></div>
+    </div>
   </div>
 
   <!-- PAGE : Reports -->
@@ -563,7 +597,7 @@ function showPage(name) {
   if (name === 'reports') loadReports();
   if (name === 'competitors') loadCompetitors();
   if (name === 'history') loadHistory();
-  if (name === 'scan') loadStats();
+  if (name === 'scan') { loadStats(); loadSchedule(); }
 }
 
 // ── Scan ──────────────────────────────────────────────────────────────────
@@ -640,7 +674,10 @@ async function loadReports() {
       <td class="td-name">${r.name.replace('rapport_','').replace('.md','').replace(/_/g,' ')}</td>
       <td>${date}</td>
       <td><span class="tag">${r.size_kb} ko</span></td>
-      <td style="text-align:right"><span style="color:var(--accent);font-family:var(--mono);font-size:11px">lire →</span></td>
+      <td style="text-align:right">
+        <a href="/api/reports/${r.name}/download" download="${r.name}" onclick="event.stopPropagation()" style="color:var(--text3);font-family:var(--mono);font-size:13px;text-decoration:none;margin-right:14px" title="Télécharger">↓</a>
+        <span style="color:var(--accent);font-family:var(--mono);font-size:11px">lire →</span>
+      </td>
     </tr>`;
   }).join('');
 
@@ -729,9 +766,53 @@ async function loadHistory() {
   container.innerHTML = items;
 }
 
+// ── Schedule ──────────────────────────────────────────────────────────────
+
+async function loadSchedule() {
+  const config = await fetch('/api/schedule').then(r => r.json());
+  document.getElementById('schedule-enabled').checked = config.enabled || false;
+  document.getElementById('schedule-sector').value = config.sector || '';
+  document.getElementById('schedule-day').value = config.day_of_week || 'monday';
+  document.getElementById('schedule-hour').value = config.hour ?? 8;
+  updateScheduleStatus(config);
+}
+
+function updateScheduleStatus(config) {
+  const el = document.getElementById('schedule-status');
+  if (config.enabled && config.sector) {
+    const days = {monday:'lundi',tuesday:'mardi',wednesday:'mercredi',thursday:'jeudi',friday:'vendredi',saturday:'samedi',sunday:'dimanche'};
+    el.textContent = `→ scan automatique chaque ${days[config.day_of_week] || config.day_of_week} à ${String(config.hour).padStart(2,'0')}h00`;
+    el.style.color = 'var(--green)';
+  } else {
+    el.textContent = config.enabled ? '⚠ renseigner un secteur' : '';
+    el.style.color = 'var(--amber)';
+  }
+}
+
+let saveScheduleTimer = null;
+function saveSchedule() {
+  clearTimeout(saveScheduleTimer);
+  saveScheduleTimer = setTimeout(async () => {
+    const config = {
+      enabled: document.getElementById('schedule-enabled').checked,
+      sector: document.getElementById('schedule-sector').value.trim(),
+      max_competitors: 5,
+      day_of_week: document.getElementById('schedule-day').value,
+      hour: parseInt(document.getElementById('schedule-hour').value) || 8,
+    };
+    await fetch('/api/schedule', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(config),
+    });
+    updateScheduleStatus(config);
+  }, 600);
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────
 
 loadStats();
+loadSchedule();
 </script>
 </body>
 </html>

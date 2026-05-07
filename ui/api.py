@@ -1,6 +1,6 @@
 """
 Veille Agent — FastAPI Backend
-Routes : scan, rapports, concurrents, historique
+Routes : scan, rapports, concurrents, historique, planification
 """
 
 import sys
@@ -8,7 +8,6 @@ import json
 import os
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -17,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from apscheduler.schedulers.background import BackgroundScheduler
 
 app = FastAPI(title="Veille Agent API")
 
@@ -35,6 +35,7 @@ ROOT = Path(__file__).parent.parent
 REPORTS_DIR = ROOT / "output" / "reports"
 SNAPSHOTS_DIR = ROOT / "storage" / "snapshots"
 SCANS_LOG = ROOT / "storage" / "scans.json"
+SCHEDULE_CONFIG = ROOT / "storage" / "schedule.json"
 
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 SNAPSHOTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -65,6 +66,14 @@ class ScanRequest(BaseModel):
     max_competitors: int = 5
 
 
+class ScheduleConfig(BaseModel):
+    enabled: bool
+    sector: str
+    max_competitors: int = 5
+    day_of_week: str = "monday"
+    hour: int = 8
+
+
 # ─── Background scan ─────────────────────────────────────────────────────────
 
 def run_scan_background(sector: str, max_competitors: int):
@@ -74,9 +83,6 @@ def run_scan_background(sector: str, max_competitors: int):
 
     try:
         from main import run
-        scan_status["step"] = "Discovery en cours..."
-
-        # Patch pour mettre à jour le step
         import discovery_agent.discovery as disc_mod
         import scraper_agent.scraper as scrap_mod
         import social_agent.social as soc_mod
@@ -114,10 +120,53 @@ def run_scan_background(sector: str, max_competitors: int):
             "changes": sum(1 for d in result.get("diffs", []) if d.get("has_changes")),
         })
 
+        # Notifications si signaux prioritaires (score >= 7)
+        high_priority = [
+            c for c in result.get("analysis", {}).get("competitors", [])
+            if c.get("score", 0) >= 7
+        ]
+        if high_priority:
+            from notifier.notify import notify_changes
+            notify_changes(sector, high_priority, result.get("report_path", ""))
+
         scan_status = {"running": False, "sector": sector, "step": "✅ Terminé", "error": ""}
 
     except Exception as e:
         scan_status = {"running": False, "sector": sector, "step": "Erreur", "error": str(e)}
+
+
+# ─── Scheduler ───────────────────────────────────────────────────────────────
+
+scheduler = BackgroundScheduler()
+scheduler.start()
+
+
+def load_schedule_config() -> dict:
+    if not SCHEDULE_CONFIG.exists():
+        return {"enabled": False, "sector": "", "max_competitors": 5, "day_of_week": "monday", "hour": 8}
+    return json.loads(SCHEDULE_CONFIG.read_text())
+
+
+def save_schedule_config(config: dict):
+    SCHEDULE_CONFIG.write_text(json.dumps(config, indent=2, ensure_ascii=False))
+
+
+def apply_schedule(config: dict):
+    scheduler.remove_all_jobs()
+    if config.get("enabled") and config.get("sector"):
+        scheduler.add_job(
+            run_scan_background,
+            "cron",
+            day_of_week=config["day_of_week"],
+            hour=config["hour"],
+            minute=0,
+            args=[config["sector"], config.get("max_competitors", 5)],
+            id="weekly_scan",
+        )
+        print(f"[SCHEDULE] Scan planifié : {config['day_of_week']} à {config['hour']}h00 — {config['sector']}")
+
+
+apply_schedule(load_schedule_config())
 
 
 # ─── Routes ──────────────────────────────────────────────────────────────────
@@ -152,6 +201,14 @@ async def list_reports():
             "created_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
         })
     return reports
+
+
+@app.get("/api/reports/{filename}/download")
+async def download_report(filename: str):
+    path = REPORTS_DIR / filename
+    if not path.exists():
+        raise HTTPException(404, "Rapport introuvable")
+    return FileResponse(path, media_type="text/markdown", filename=filename)
 
 
 @app.get("/api/reports/{filename}")
@@ -194,9 +251,20 @@ async def get_history():
 
 @app.get("/api/history/{slug}")
 async def get_competitor_history(slug: str):
-    """Retourne l'historique des snapshots d'un concurrent."""
     path = SNAPSHOTS_DIR / f"{slug}.json"
     if not path.exists():
         raise HTTPException(404, "Concurrent introuvable")
-    data = json.loads(path.read_text())
-    return data
+    return json.loads(path.read_text())
+
+
+@app.get("/api/schedule")
+async def get_schedule():
+    return load_schedule_config()
+
+
+@app.post("/api/schedule")
+async def update_schedule(config: ScheduleConfig):
+    c = config.model_dump()
+    save_schedule_config(c)
+    apply_schedule(c)
+    return {"message": "Planification mise à jour"}
