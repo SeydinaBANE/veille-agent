@@ -1,0 +1,10 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.git/
+.gstack/
+.vscode/
+storage/snapshots/*.json
+output/reports/*.md
