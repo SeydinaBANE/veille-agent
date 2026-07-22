@@ -6,7 +6,7 @@ Pipeline de veille concurrentielle automatisé, orchestré avec **LangGraph**. �
 
 ## Architecture
 
-Le pipeline suit une **architecture hexagonale (ports & adapters)** : le domaine et les use cases ne dépendent d'aucune infrastructure concrète, qui est injectée via des interfaces (`Protocol`).
+Le pipeline suit une **architecture hexagonale (ports & adapters)** : le domaine et les use cases ne dépendent d'aucune infrastructure concrète, qui est injectée via des interfaces (`Protocol`). Le pourquoi des décisions structurantes (architecture hexagonale, cible de déploiement, retry/backoff, logging, durcissement API...) est documenté dans [`docs/adr/`](docs/adr/README.md).
 
 ```
 discovery → scraper → social → diff → analysis → report

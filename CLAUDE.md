@@ -38,6 +38,8 @@ Les rapports sont écrits dans `output/reports/rapport_<date>_<secteur>.md`. Les
 
 ## Architecture
 
+Le pourquoi des décisions structurantes (pas seulement le quoi) est documenté dans `docs/adr/` — s'y référer avant de remettre en cause un choix existant, et y ajouter une entrée pour toute nouvelle décision d'architecture significative (voir `docs/adr/template.md`).
+
 Le projet suit une **architecture hexagonale (ports & adapters)** :
 
 ```
