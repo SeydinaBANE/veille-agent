@@ -18,6 +18,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from apscheduler.schedulers.background import BackgroundScheduler
 
+from adapters.notify.composite_notifier import CompositeNotifier
+from adapters.notify.discord_notifier import DiscordWebhookNotifier
+from adapters.notify.email_notifier import SmtpEmailNotifier
+from adapters.notify.slack_notifier import SlackWebhookNotifier
+from application.notify import NotificationService
+
 app = FastAPI(title="Veille Agent API")
 
 app.add_middleware(
@@ -74,6 +80,23 @@ class ScheduleConfig(BaseModel):
     hour: int = 8
 
 
+# ─── Notifications ───────────────────────────────────────────────────────────
+
+def _build_notification_service() -> NotificationService:
+    notifiers = [
+        SmtpEmailNotifier(
+            host=os.getenv("SMTP_HOST", "smtp.gmail.com"),
+            port=int(os.getenv("SMTP_PORT", "587")),
+            user=os.getenv("SMTP_USER", ""),
+            password=os.getenv("SMTP_PASS", ""),
+            to=os.getenv("NOTIFY_EMAIL", ""),
+        ),
+        SlackWebhookNotifier(webhook_url=os.getenv("SLACK_WEBHOOK_URL", "")),
+        DiscordWebhookNotifier(webhook_url=os.getenv("DISCORD_WEBHOOK_URL", "")),
+    ]
+    return NotificationService(notifier=CompositeNotifier(notifiers=notifiers))
+
+
 # ─── Background scan ─────────────────────────────────────────────────────────
 
 def run_scan_background(sector: str, max_competitors: int):
@@ -83,51 +106,24 @@ def run_scan_background(sector: str, max_competitors: int):
 
     try:
         from main import run
-        import discovery_agent.discovery as disc_mod
-        import scraper_agent.scraper as scrap_mod
-        import social_agent.social as soc_mod
 
-        original_discovery = disc_mod.run_discovery
-        original_scraper = scrap_mod.run_scraper
-        original_social = soc_mod.run_social
+        def on_step(message: str) -> None:
+            scan_status["step"] = message
 
-        def patched_discovery(*args, **kwargs):
-            scan_status["step"] = "🔍 Identification des concurrents..."
-            return original_discovery(*args, **kwargs)
-
-        def patched_scraper(*args, **kwargs):
-            scan_status["step"] = "🌐 Scraping des sites web..."
-            return original_scraper(*args, **kwargs)
-
-        def patched_social(*args, **kwargs):
-            scan_status["step"] = "📱 Collecte des données sociales..."
-            return original_social(*args, **kwargs)
-
-        disc_mod.run_discovery = patched_discovery
-        scrap_mod.run_scraper = patched_scraper
-        soc_mod.run_social = patched_social
-
-        scan_status["step"] = "🔍 Identification des concurrents..."
-        result = run(sector, max_competitors)
+        result = run(sector, max_competitors, on_step=on_step)
 
         duration = round((datetime.now() - start).total_seconds(), 1)
+        report_path = result.get("report_path", "")
         save_scan_log({
             "sector": sector,
             "date": datetime.now().isoformat(),
             "duration_s": duration,
-            "report_path": result.get("report_path", ""),
-            "competitors": [c.get("name") for c in result.get("competitors", [])],
-            "changes": sum(1 for d in result.get("diffs", []) if d.get("has_changes")),
+            "report_path": report_path,
+            "competitors": [c.name for c in result.get("competitors", [])],
+            "changes": sum(1 for d in result.get("diffs", []) if d.has_changes),
         })
 
-        # Notifications si signaux prioritaires (score >= 7)
-        high_priority = [
-            c for c in result.get("analysis", {}).get("competitors", [])
-            if c.get("score", 0) >= 7
-        ]
-        if high_priority:
-            from notifier.notify import notify_changes
-            notify_changes(sector, high_priority, result.get("report_path", ""))
+        _build_notification_service().notify_high_priority(sector, result["analysis"], report_path)
 
         scan_status = {"running": False, "sector": sector, "step": "✅ Terminé", "error": ""}
 
