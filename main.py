@@ -20,28 +20,32 @@ from adapters.search.duckduckgo import DuckDuckGoSearchEngine
 from adapters.social.scraper import PublicSocialScraper
 from adapters.storage.snapshot_repository import JsonSnapshotRepository
 from adapters.web.scraper import HttpWebScraper
+from adapters.storage.report_repository import MarkdownReportRepository
 from application.analysis import AnalysisService
 from application.discovery import DiscoveryService
 from application.diff import DiffService
+from application.report import ReportService
 from application.scraper import ScraperService
 from application.social import SocialService
 from domain.models import (
     ChangeSignal,
     ChangeType,
     Competitor,
+    CompetitorAnalysis,
     CompetitorDiff,
     CompetitorSnapshot,
+    Priority,
     SocialData,
     StrategicAnalysis,
     WebData,
 )
-from report_agent.report import run_report
 
 _discovery_service: DiscoveryService | None = None
 _scraper_service: ScraperService | None = None
 _social_service: SocialService | None = None
 _diff_service: DiffService | None = None
 _analysis_service: AnalysisService | None = None
+_report_service: ReportService | None = None
 
 
 def _get_discovery_service() -> DiscoveryService:
@@ -82,6 +86,36 @@ def _get_analysis_service() -> AnalysisService:
             llm=OpenRouterLLMClient(api_key=os.environ["OPENROUTER_API_KEY"], model="anthropic/claude-opus-4-5"),
         )
     return _analysis_service
+
+
+def _get_report_service() -> ReportService:
+    global _report_service
+    if _report_service is None:
+        _report_service = ReportService(
+            llm=OpenRouterLLMClient(api_key=os.environ["OPENROUTER_API_KEY"], model="anthropic/claude-sonnet-4-6"),
+            repository=MarkdownReportRepository(),
+        )
+    return _report_service
+
+
+def _legacy_dict_to_analysis(d: dict) -> StrategicAnalysis:
+    competitors = [
+        CompetitorAnalysis(
+            name=c["name"],
+            score=c["score"],
+            signal_type=c["signal_type"],
+            interpretation=c["interpretation"],
+            recommended_action=c["recommended_action"],
+            priority=Priority(c["priority"]),
+        )
+        for c in d.get("competitors", [])
+    ]
+    return StrategicAnalysis(
+        competitors=competitors,
+        summary=d.get("summary", ""),
+        no_changes=d.get("no_changes", []),
+        parse_error=d.get("parse_error", False),
+    )
 
 
 def _diff_to_legacy_dict(diff: CompetitorDiff) -> dict:
@@ -204,7 +238,8 @@ def analysis_node(state: VeilleState) -> VeilleState:
 def report_node(state: VeilleState) -> VeilleState:
     print(f"\n📝 [REPORT] Génération du rapport...")
     t = datetime.now()
-    report_path = run_report(state["sector"], state["analysis"], state["diffs"])
+    analysis = _legacy_dict_to_analysis(state["analysis"])
+    report_path = _get_report_service().generate(state["sector"], analysis)
     state["report_path"] = report_path
     state["trace"]["report"] = {"duration_s": round((datetime.now() - t).total_seconds(), 2)}
     return state
