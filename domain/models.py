@@ -1,7 +1,7 @@
 """Entités métier du domaine de veille concurrentielle."""
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 
 @dataclass(frozen=True)
@@ -42,7 +42,7 @@ class CompetitorSnapshot:
     saved_at: str | None = None
 
 
-class ChangeType(str, Enum):
+class ChangeType(StrEnum):
     NOUVEAU_CONCURRENT = "nouveau_concurrent"
     SITE_MODIFIE = "site_modifie"
     PRIX_MODIFIE = "prix_modifie"
@@ -69,7 +69,7 @@ class CompetitorDiff:
         return len(self.changes) > 0
 
 
-class Priority(str, Enum):
+class Priority(StrEnum):
     HAUTE = "haute"
     MOYENNE = "moyenne"
     FAIBLE = "faible"
@@ -100,15 +100,3 @@ class StrategicAnalysis:
 class StepTrace:
     duration_s: float
     detail: str = ""
-
-
-@dataclass
-class ScanReport:
-    sector: str
-    competitors: list[Competitor]
-    web_data: list[WebData]
-    social_data: list[SocialData]
-    diffs: list[CompetitorDiff]
-    analysis: StrategicAnalysis
-    report_path: str
-    trace: dict[str, StepTrace]

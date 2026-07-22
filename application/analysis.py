@@ -82,6 +82,8 @@ class AnalysisService:
 
     @staticmethod
     def _parse_priority(value: str | None) -> Priority:
+        if value is None:
+            return Priority.FAIBLE
         try:
             return Priority(value)
         except ValueError:

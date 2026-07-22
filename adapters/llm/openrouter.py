@@ -1,6 +1,7 @@
 """Adapter LLM — implémente LLMClient via OpenRouter (SDK Anthropic)."""
 
 import anthropic
+from anthropic.types import TextBlock
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 _RETRYABLE_ERRORS = (
@@ -29,4 +30,7 @@ class OpenRouterLLMClient:
             system=system,
             messages=[{"role": "user", "content": prompt}],
         )
-        return message.content[0].text.strip()
+        block = message.content[0]
+        if not isinstance(block, TextBlock):
+            raise ValueError(f"Réponse LLM inattendue : bloc de type {type(block).__name__}")
+        return block.text.strip()

@@ -3,30 +3,32 @@ Veille Agent — FastAPI Backend
 Routes : scan, rapports, concurrents, historique, planification
 """
 
-import sys
 import json
 import logging
 import os
-from pathlib import Path
+import sys
 from datetime import datetime
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from fastapi import FastAPI, BackgroundTasks, HTTPException
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, FileResponse
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 from apscheduler.schedulers.background import BackgroundScheduler
+from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
-from logging_config import configure_logging
+from logging_config import configure_logging  # noqa: E402
+
 configure_logging()
 
-from adapters.notify.composite_notifier import CompositeNotifier
-from adapters.notify.discord_notifier import DiscordWebhookNotifier
-from adapters.notify.email_notifier import SmtpEmailNotifier
-from adapters.notify.slack_notifier import SlackWebhookNotifier
-from application.notify import NotificationService
+from adapters.notify.composite_notifier import CompositeNotifier  # noqa: E402
+from adapters.notify.discord_notifier import DiscordWebhookNotifier  # noqa: E402
+from adapters.notify.email_notifier import SmtpEmailNotifier  # noqa: E402
+from adapters.notify.slack_notifier import SlackWebhookNotifier  # noqa: E402
+from application.notify import NotificationService  # noqa: E402
+from domain.ports import Notifier  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +91,7 @@ class ScheduleConfig(BaseModel):
 # ─── Notifications ───────────────────────────────────────────────────────────
 
 def _build_notification_service() -> NotificationService:
-    notifiers = [
+    notifiers: list[Notifier] = [
         SmtpEmailNotifier(
             host=os.getenv("SMTP_HOST", "smtp.gmail.com"),
             port=int(os.getenv("SMTP_PORT", "587")),

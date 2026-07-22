@@ -11,35 +11,40 @@ Ce module est le composition root : il instancie les adapters, les injecte
 dans les use cases, et orchestre le tout via un StateGraph LangGraph.
 """
 
-import sys
-import os
 import logging
+import os
+import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent))
 
-from typing import Callable, TypedDict
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from langgraph.graph import StateGraph, END
+from typing import TypedDict
+
 from dotenv import load_dotenv
+from langgraph.graph import END, StateGraph
+
 load_dotenv()
 
-from logging_config import configure_logging
+from logging_config import configure_logging  # noqa: E402
+
 configure_logging()
 
-from adapters.llm.openrouter import OpenRouterLLMClient
-from adapters.search.duckduckgo import DuckDuckGoSearchEngine
-from adapters.social.scraper import PublicSocialScraper
-from adapters.storage.report_repository import MarkdownReportRepository
-from adapters.storage.snapshot_repository import JsonSnapshotRepository
-from adapters.web.scraper import HttpWebScraper
-from application.analysis import AnalysisService
-from application.discovery import DiscoveryService
-from application.diff import DiffService
-from application.report import ReportService
-from application.scraper import ScraperService
-from application.social import SocialService
-from domain.models import Competitor, CompetitorDiff, SocialData, StepTrace, StrategicAnalysis, WebData
+from adapters.llm.openrouter import OpenRouterLLMClient  # noqa: E402
+from adapters.search.duckduckgo import DuckDuckGoSearchEngine  # noqa: E402
+from adapters.social.scraper import PublicSocialScraper  # noqa: E402
+from adapters.storage.report_repository import MarkdownReportRepository  # noqa: E402
+from adapters.storage.snapshot_repository import JsonSnapshotRepository  # noqa: E402
+from adapters.web.scraper import HttpWebScraper  # noqa: E402
+from application.analysis import AnalysisService  # noqa: E402
+from application.diff import DiffService  # noqa: E402
+from application.discovery import DiscoveryService  # noqa: E402
+from application.report import ReportService  # noqa: E402
+from application.scraper import ScraperService  # noqa: E402
+from application.social import SocialService  # noqa: E402
+from domain.models import Competitor, CompetitorDiff, SocialData, StepTrace, StrategicAnalysis, WebData  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

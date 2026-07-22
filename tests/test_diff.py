@@ -1,5 +1,5 @@
-from domain.models import ChangeType, CompetitorSnapshot, SocialData, WebData
 from application.diff import DiffService
+from domain.models import ChangeType, CompetitorSnapshot, SocialData, WebData
 
 
 class FakeSnapshotRepository:

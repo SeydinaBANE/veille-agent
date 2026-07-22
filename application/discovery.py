@@ -17,7 +17,9 @@ Pour chaque concurrent retourne :
 - description : 1 phrase sur ce qu'ils font
 
 Réponds UNIQUEMENT avec un tableau JSON valide, sans markdown, sans explication.
-Exemple : [{"name":"Stripe","website":"https://stripe.com","linkedin":"https://linkedin.com/company/stripe","twitter":"stripe","description":"Paiement en ligne pour développeurs"}]
+Exemple : [{"name":"Stripe","website":"https://stripe.com",
+"linkedin":"https://linkedin.com/company/stripe","twitter":"stripe",
+"description":"Paiement en ligne pour développeurs"}]
 """
 
 
