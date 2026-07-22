@@ -9,15 +9,32 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from typing import TypedDict
+from dataclasses import asdict
 from datetime import datetime
 from langgraph.graph import StateGraph, END
+from dotenv import load_dotenv
+load_dotenv()
 
-from discovery_agent.discovery import run_discovery
+from adapters.llm.openrouter import OpenRouterLLMClient
+from adapters.search.duckduckgo import DuckDuckGoSearchEngine
+from application.discovery import DiscoveryService
 from scraper_agent.scraper import run_scraper
 from social_agent.social import run_social
 from diff_agent.diff import run_diff
 from analysis_agent.analysis import run_analysis
 from report_agent.report import run_report
+
+_discovery_service: DiscoveryService | None = None
+
+
+def _get_discovery_service() -> DiscoveryService:
+    global _discovery_service
+    if _discovery_service is None:
+        _discovery_service = DiscoveryService(
+            llm=OpenRouterLLMClient(api_key=os.environ["OPENROUTER_API_KEY"], model="anthropic/claude-haiku-4-5"),
+            search=DuckDuckGoSearchEngine(),
+        )
+    return _discovery_service
 
 
 # ─── State ───────────────────────────────────────────────────────────────────
@@ -39,8 +56,8 @@ class VeilleState(TypedDict):
 def discovery_node(state: VeilleState) -> VeilleState:
     print(f"\n🔍 [DISCOVERY] Identification des concurrents...")
     t = datetime.now()
-    competitors = run_discovery(state["sector"], state["max_competitors"])
-    state["competitors"] = competitors
+    competitors = _get_discovery_service().discover(state["sector"], state["max_competitors"])
+    state["competitors"] = [asdict(c) for c in competitors]
     state["trace"]["discovery"] = {"duration_s": round((datetime.now() - t).total_seconds(), 2), "count": len(competitors)}
     print(f"   ✅ {len(competitors)} concurrents trouvés")
     return state
