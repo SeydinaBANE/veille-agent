@@ -4,6 +4,7 @@ import logging
 
 import requests
 from bs4 import BeautifulSoup
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from domain.models import Competitor, SocialData
 
@@ -27,17 +28,27 @@ class PublicSocialScraper:
             twitter_posts=self._fetch_twitter_posts(competitor.twitter),
         )
 
+    @retry(
+        retry=retry_if_exception_type(requests.RequestException),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=8),
+        reraise=True,
+    )
+    def _search_linkedin_duckduckgo(self, company_name: str) -> dict:
+        query = f'site:linkedin.com "{company_name}" post annonce 2025'
+        response = requests.get(
+            "https://api.duckduckgo.com/",
+            params={"q": query, "format": "json", "no_html": "1"},
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=10,
+        )
+        response.raise_for_status()
+        return response.json()
+
     def _fetch_linkedin_posts(self, linkedin_url: str, company_name: str) -> list[str]:
         posts: list[str] = []
         try:
-            query = f'site:linkedin.com "{company_name}" post annonce 2025'
-            response = requests.get(
-                "https://api.duckduckgo.com/",
-                params={"q": query, "format": "json", "no_html": "1"},
-                headers={"User-Agent": "Mozilla/5.0"},
-                timeout=10,
-            )
-            data = response.json()
+            data = self._search_linkedin_duckduckgo(company_name)
             for topic in data.get("RelatedTopics", [])[:5]:
                 if isinstance(topic, dict) and topic.get("Text"):
                     posts.append(topic["Text"])

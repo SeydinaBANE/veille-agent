@@ -13,6 +13,7 @@ dependencies = [
     "fastapi>=0.111.0",
     "uvicorn>=0.30.0",
     "apscheduler>=3.10.0",
+    "tenacity>=8.2.0",
 ]
 
 [dependency-groups]
