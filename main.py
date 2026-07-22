@@ -18,18 +18,20 @@ load_dotenv()
 from adapters.llm.openrouter import OpenRouterLLMClient
 from adapters.search.duckduckgo import DuckDuckGoSearchEngine
 from adapters.social.scraper import PublicSocialScraper
+from adapters.storage.snapshot_repository import JsonSnapshotRepository
 from adapters.web.scraper import HttpWebScraper
 from application.discovery import DiscoveryService
+from application.diff import DiffService
 from application.scraper import ScraperService
 from application.social import SocialService
-from domain.models import Competitor
-from diff_agent.diff import run_diff
+from domain.models import Competitor, CompetitorDiff, SocialData, WebData
 from analysis_agent.analysis import run_analysis
 from report_agent.report import run_report
 
 _discovery_service: DiscoveryService | None = None
 _scraper_service: ScraperService | None = None
 _social_service: SocialService | None = None
+_diff_service: DiffService | None = None
 
 
 def _get_discovery_service() -> DiscoveryService:
@@ -54,6 +56,23 @@ def _get_social_service() -> SocialService:
     if _social_service is None:
         _social_service = SocialService(scraper=PublicSocialScraper())
     return _social_service
+
+
+def _get_diff_service() -> DiffService:
+    global _diff_service
+    if _diff_service is None:
+        _diff_service = DiffService(repository=JsonSnapshotRepository())
+    return _diff_service
+
+
+def _diff_to_legacy_dict(diff: CompetitorDiff) -> dict:
+    return {
+        "name": diff.name,
+        "changes": [{"type": c.change_type.value, "description": c.description} for c in diff.changes],
+        "has_changes": diff.has_changes,
+        "data": asdict(diff.snapshot),
+        "scanned_at": diff.scanned_at,
+    }
 
 
 # ─── State ───────────────────────────────────────────────────────────────────
@@ -107,9 +126,11 @@ def social_node(state: VeilleState) -> VeilleState:
 def diff_node(state: VeilleState) -> VeilleState:
     print(f"\n🔄 [DIFF] Comparaison avec snapshots précédents...")
     t = datetime.now()
-    diffs = run_diff(state["web_data"], state["social_data"])
-    state["diffs"] = diffs
-    changed = sum(1 for d in diffs if d.get("has_changes"))
+    web_data = [WebData(**w) for w in state["web_data"]]
+    social_data = [SocialData(**s) for s in state["social_data"]]
+    diffs = _get_diff_service().diff_all(web_data, social_data)
+    state["diffs"] = [_diff_to_legacy_dict(d) for d in diffs]
+    changed = sum(1 for d in diffs if d.has_changes)
     state["trace"]["diff"] = {"duration_s": round((datetime.now() - t).total_seconds(), 2), "changed": changed}
     print(f"   ✅ {changed}/{len(diffs)} concurrent(s) avec changements")
     return state
