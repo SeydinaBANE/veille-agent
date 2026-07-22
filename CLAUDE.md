@@ -38,30 +38,51 @@ Les rapports sont écrits dans `output/reports/rapport_<date>_<secteur>.md`. Les
 
 ## Architecture
 
+Le projet suit une **architecture hexagonale (ports & adapters)** :
+
+```
+domain/       entités métier (dataclasses) + ports (Protocol) — aucune dépendance externe
+application/  use cases : orchestrent les ports, aucune dépendance à une infra concrète
+adapters/     implémentations concrètes des ports (LLM, scraping, stockage, notifications)
+main.py       composition root : instancie les adapters, les injecte dans les use cases,
+              orchestre le tout via un StateGraph LangGraph
+ui/api.py     composition root du backend FastAPI (mêmes use cases, exposés en HTTP)
+```
+
 Le pipeline est un **`StateGraph` LangGraph** défini dans `main.py`. Les nœuds s'exécutent séquentiellement :
 
 ```
 discovery → scraper → social → diff → analysis → report
 ```
 
-L'état partagé (`VeilleState`) transmet les données entre les nœuds sous forme de TypedDict. Chaque nœud modifie l'état en place et ajoute des métriques de durée dans `state["trace"]`.
+L'état partagé (`VeilleState`) transmet les entités du domaine entre les nœuds sous forme de TypedDict (`list[Competitor]`, `list[WebData]`, `StrategicAnalysis`...). Chaque nœud modifie l'état en place et ajoute une `StepTrace` (durée + détail) dans `state["trace"]`. La progression est aussi remontée via le callback `on_step`, utilisé par `ui/api.py` pour le polling `/api/scan/status`.
 
-Chaque étape du pipeline vit dans son propre package :
-
-| Package | Fichier | Rôle | LLM |
+| Couche | Fichier | Rôle | LLM |
 |---|---|---|---|
-| `discovery_agent` | `discovery.py` | Trouve les concurrents via DuckDuckGo + LLM | Claude Haiku (rapide) |
-| `scraper_agent` | `scraper.py` | Scrape la homepage, `/pricing`, `/blog` | aucun |
-| `social_agent` | `social.py` | Scrape LinkedIn (via DuckDuckGo) + Twitter (via Nitter) | aucun |
-| `diff_agent` | `diff.py` | Compare les nouvelles données aux snapshots stockés | aucun |
-| `analysis_agent` | `analysis.py` | Score et interprète les changements stratégiques | Claude Opus |
-| `report_agent` | `report.py` | Génère le rapport Markdown | Claude Sonnet |
-| `storage` | `snapshot.py` | CRUD JSON des snapshots + `slugify()` | aucun |
+| `application/discovery.py` | `DiscoveryService` | Trouve les concurrents via `SearchEngine` + `LLMClient` | Claude Haiku (rapide) |
+| `application/scraper.py` | `ScraperService` | Scrape la homepage, `/pricing`, `/blog` via `WebScraper` | aucun |
+| `application/social.py` | `SocialService` | Scrape LinkedIn + Twitter via `SocialScraper` | aucun |
+| `application/diff.py` | `DiffService` | Compare les nouvelles données aux snapshots via `SnapshotRepository` | aucun |
+| `application/analysis.py` | `AnalysisService` | Score et interprète les changements stratégiques | Claude Opus |
+| `application/report.py` | `ReportService` | Génère le rapport Markdown via `ReportRepository` | Claude Sonnet |
+| `application/notify.py` | `NotificationService` | Filtre les signaux prioritaires (score ≥ 7) et notifie via `Notifier` | aucun |
+
+Adapters correspondants : `adapters/llm/openrouter.py` (LLMClient), `adapters/search/duckduckgo.py` (SearchEngine), `adapters/web/scraper.py` (WebScraper), `adapters/social/scraper.py` (SocialScraper), `adapters/storage/snapshot_repository.py` + `report_repository.py` (SnapshotRepository / ReportRepository), `adapters/notify/*` (Notifier — email SMTP, Slack, Discord, composite).
+
+Les ports sont définis dans `domain/ports.py` (des `Protocol`, pas des classes de base) ; les entités dans `domain/models.py`.
+
+## Tests
+
+```bash
+uv run pytest        # tests unitaires, chaque use case testé avec des doubles de ports
+```
+
+Les tests ne mockent jamais les adapters concrets (requests, smtplib, anthropic) — ils injectent de faux ports (`FakeLLM`, `FakeSnapshotRepository`, etc.) directement dans les services `application/*`.
 
 ## Détails techniques importants
 
-- **Routage LLM** : `anthropic.Anthropic(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api")` — les noms de modèles utilisent le préfixe `anthropic/` (ex : `anthropic/claude-haiku-4-5`).
-- **Logique de diff** : `diff_agent/diff.py` compare les ensembles de mots des 500 premiers caractères ; une similarité < 85 % déclenche un signal de changement. Le premier scan crée toujours une baseline (pas de diff).
+- **Routage LLM** : `adapters/llm/openrouter.py` utilise `anthropic.Anthropic(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api")` — les noms de modèles utilisent le préfixe `anthropic/` (ex : `anthropic/claude-haiku-4-5`).
+- **Logique de diff** : `application/diff.py` (`DiffService._text_changed`) compare les ensembles de mots des 500 premiers caractères ; une similarité < 85 % déclenche un signal de changement. Le premier scan crée toujours une baseline (pas de diff).
 - **Scraping social** : LinkedIn utilise la recherche DuckDuckGo en priorité, le scraping direct en fallback. Twitter utilise des instances Nitter publiques avec une liste de fallback.
-- **Snapshots** : nommés `storage/snapshots/<slug>.json` où slug = `slugify(nom_concurrent)`. Exécuter le pipeline deux fois sur le même concurrent met à jour le snapshot — la deuxième exécution produit de vrais diffs.
+- **Snapshots** : le port `SnapshotRepository` prend directement le nom du concurrent (pas de slug) ; `adapters/storage/snapshot_repository.py` encapsule le `slugify()` et écrit dans `storage/snapshots/<slug>.json`. Exécuter le pipeline deux fois sur le même concurrent met à jour le snapshot — la deuxième exécution produit de vrais diffs.
 - **Tous les prompts LLM sont en français** — les réponses sont attendues en français.
