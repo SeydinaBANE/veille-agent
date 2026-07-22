@@ -20,18 +20,28 @@ from adapters.search.duckduckgo import DuckDuckGoSearchEngine
 from adapters.social.scraper import PublicSocialScraper
 from adapters.storage.snapshot_repository import JsonSnapshotRepository
 from adapters.web.scraper import HttpWebScraper
+from application.analysis import AnalysisService
 from application.discovery import DiscoveryService
 from application.diff import DiffService
 from application.scraper import ScraperService
 from application.social import SocialService
-from domain.models import Competitor, CompetitorDiff, SocialData, WebData
-from analysis_agent.analysis import run_analysis
+from domain.models import (
+    ChangeSignal,
+    ChangeType,
+    Competitor,
+    CompetitorDiff,
+    CompetitorSnapshot,
+    SocialData,
+    StrategicAnalysis,
+    WebData,
+)
 from report_agent.report import run_report
 
 _discovery_service: DiscoveryService | None = None
 _scraper_service: ScraperService | None = None
 _social_service: SocialService | None = None
 _diff_service: DiffService | None = None
+_analysis_service: AnalysisService | None = None
 
 
 def _get_discovery_service() -> DiscoveryService:
@@ -65,6 +75,15 @@ def _get_diff_service() -> DiffService:
     return _diff_service
 
 
+def _get_analysis_service() -> AnalysisService:
+    global _analysis_service
+    if _analysis_service is None:
+        _analysis_service = AnalysisService(
+            llm=OpenRouterLLMClient(api_key=os.environ["OPENROUTER_API_KEY"], model="anthropic/claude-opus-4-5"),
+        )
+    return _analysis_service
+
+
 def _diff_to_legacy_dict(diff: CompetitorDiff) -> dict:
     return {
         "name": diff.name,
@@ -72,6 +91,41 @@ def _diff_to_legacy_dict(diff: CompetitorDiff) -> dict:
         "has_changes": diff.has_changes,
         "data": asdict(diff.snapshot),
         "scanned_at": diff.scanned_at,
+    }
+
+
+def _legacy_dict_to_diff(d: dict) -> CompetitorDiff:
+    data = d["data"]
+    snapshot = CompetitorSnapshot(
+        name=data.get("name", d["name"]),
+        website=data.get("website"),
+        homepage=data.get("homepage"),
+        pricing=data.get("pricing"),
+        blog_titles=data.get("blog_titles", []),
+        linkedin_posts=data.get("linkedin_posts", []),
+        twitter_posts=data.get("twitter_posts", []),
+        saved_at=data.get("_saved_at"),
+    )
+    changes = [ChangeSignal(ChangeType(c["type"]), c["description"]) for c in d["changes"]]
+    return CompetitorDiff(name=d["name"], changes=changes, snapshot=snapshot, scanned_at=d["scanned_at"])
+
+
+def _analysis_to_legacy_dict(analysis: StrategicAnalysis) -> dict:
+    return {
+        "competitors": [
+            {
+                "name": c.name,
+                "score": c.score,
+                "signal_type": c.signal_type,
+                "interpretation": c.interpretation,
+                "recommended_action": c.recommended_action,
+                "priority": c.priority.value,
+            }
+            for c in analysis.competitors
+        ],
+        "summary": analysis.summary,
+        "no_changes": analysis.no_changes,
+        "parse_error": analysis.parse_error,
     }
 
 
@@ -139,8 +193,9 @@ def diff_node(state: VeilleState) -> VeilleState:
 def analysis_node(state: VeilleState) -> VeilleState:
     print(f"\n🎯 [ANALYSIS] Analyse stratégique des signaux...")
     t = datetime.now()
-    analysis = run_analysis(state["diffs"])
-    state["analysis"] = analysis
+    diffs = [_legacy_dict_to_diff(d) for d in state["diffs"]]
+    analysis = _get_analysis_service().analyze(diffs)
+    state["analysis"] = _analysis_to_legacy_dict(analysis)
     state["trace"]["analysis"] = {"duration_s": round((datetime.now() - t).total_seconds(), 2)}
     print(f"   ✅ Analyse terminée")
     return state
