@@ -17,17 +17,19 @@ load_dotenv()
 
 from adapters.llm.openrouter import OpenRouterLLMClient
 from adapters.search.duckduckgo import DuckDuckGoSearchEngine
+from adapters.social.scraper import PublicSocialScraper
 from adapters.web.scraper import HttpWebScraper
 from application.discovery import DiscoveryService
 from application.scraper import ScraperService
+from application.social import SocialService
 from domain.models import Competitor
-from social_agent.social import run_social
 from diff_agent.diff import run_diff
 from analysis_agent.analysis import run_analysis
 from report_agent.report import run_report
 
 _discovery_service: DiscoveryService | None = None
 _scraper_service: ScraperService | None = None
+_social_service: SocialService | None = None
 
 
 def _get_discovery_service() -> DiscoveryService:
@@ -45,6 +47,13 @@ def _get_scraper_service() -> ScraperService:
     if _scraper_service is None:
         _scraper_service = ScraperService(scraper=HttpWebScraper())
     return _scraper_service
+
+
+def _get_social_service() -> SocialService:
+    global _social_service
+    if _social_service is None:
+        _social_service = SocialService(scraper=PublicSocialScraper())
+    return _social_service
 
 
 # ─── State ───────────────────────────────────────────────────────────────────
@@ -87,8 +96,9 @@ def scraper_node(state: VeilleState) -> VeilleState:
 def social_node(state: VeilleState) -> VeilleState:
     print(f"\n📱 [SOCIAL] Collecte des posts sociaux...")
     t = datetime.now()
-    social_data = run_social(state["competitors"])
-    state["social_data"] = social_data
+    competitors = [Competitor(**c) for c in state["competitors"]]
+    social_data = _get_social_service().collect_all(competitors)
+    state["social_data"] = [asdict(s) for s in social_data]
     state["trace"]["social"] = {"duration_s": round((datetime.now() - t).total_seconds(), 2)}
     print(f"   ✅ Données sociales collectées")
     return state
