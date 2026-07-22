@@ -1,7 +1,10 @@
 """Adapter de stockage — implémente ReportRepository via des fichiers Markdown."""
 
+import logging
 from datetime import datetime
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 REPORTS_DIR = Path(__file__).parent.parent.parent / "output" / "reports"
 
@@ -19,5 +22,5 @@ class MarkdownReportRepository:
         with open(report_path, "w", encoding="utf-8") as f:
             f.write(content)
 
-        print(f"   📄 Rapport sauvegardé : {report_path}")
+        logger.info("Rapport sauvegardé : %s", report_path)
         return report_path

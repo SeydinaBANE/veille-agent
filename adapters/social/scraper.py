@@ -1,9 +1,13 @@
 """Adapter social — implémente SocialScraper via scraping public LinkedIn + Nitter."""
 
+import logging
+
 import requests
 from bs4 import BeautifulSoup
 
 from domain.models import Competitor, SocialData
+
+logger = logging.getLogger(__name__)
 
 _GOOGLEBOT_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"}
 
@@ -16,7 +20,7 @@ _NITTER_INSTANCES = [
 
 class PublicSocialScraper:
     def scrape(self, competitor: Competitor) -> SocialData:
-        print(f"   📱 Social scraping : {competitor.name}...")
+        logger.info("Social scraping : %s...", competitor.name)
         return SocialData(
             name=competitor.name,
             linkedin_posts=self._fetch_linkedin_posts(competitor.linkedin, competitor.name),

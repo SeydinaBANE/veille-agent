@@ -1,11 +1,14 @@
 """Adapter de notification — envoie un email via SMTP."""
 
+import logging
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 from domain.models import CompetitorAnalysis
 from domain.notification import build_message
+
+logger = logging.getLogger(__name__)
 
 
 class SmtpEmailNotifier:
@@ -33,6 +36,6 @@ class SmtpEmailNotifier:
                 server.starttls()
                 server.login(self._user, self._password)
                 server.send_message(msg)
-            print(f"[NOTIFY] Email envoyé à {self._to}")
-        except smtplib.SMTPException as e:
-            print(f"[NOTIFY] Email error: {e}")
+            logger.info("Email envoyé à %s", self._to)
+        except smtplib.SMTPException:
+            logger.exception("Échec d'envoi de l'email de notification")

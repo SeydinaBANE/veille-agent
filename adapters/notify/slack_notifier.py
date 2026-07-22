@@ -1,9 +1,13 @@
 """Adapter de notification — envoie un message via un webhook Slack."""
 
+import logging
+
 import requests
 
 from domain.models import CompetitorAnalysis
 from domain.notification import build_message
+
+logger = logging.getLogger(__name__)
 
 
 class SlackWebhookNotifier:
@@ -17,6 +21,6 @@ class SlackWebhookNotifier:
         message = build_message(sector, high_priority, report_path)
         try:
             requests.post(self._webhook_url, json={"text": message}, timeout=10)
-            print("[NOTIFY] Slack envoyé")
-        except requests.RequestException as e:
-            print(f"[NOTIFY] Slack error: {e}")
+            logger.info("Slack envoyé")
+        except requests.RequestException:
+            logger.exception("Échec d'envoi de la notification Slack")

@@ -13,6 +13,7 @@ dans les use cases, et orchestre le tout via un StateGraph LangGraph.
 
 import sys
 import os
+import logging
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -22,6 +23,9 @@ from datetime import datetime
 from langgraph.graph import StateGraph, END
 from dotenv import load_dotenv
 load_dotenv()
+
+from logging_config import configure_logging
+configure_logging()
 
 from adapters.llm.openrouter import OpenRouterLLMClient
 from adapters.search.duckduckgo import DuckDuckGoSearchEngine
@@ -36,6 +40,8 @@ from application.report import ReportService
 from application.scraper import ScraperService
 from application.social import SocialService
 from domain.models import Competitor, CompetitorDiff, SocialData, StepTrace, StrategicAnalysis, WebData
+
+logger = logging.getLogger(__name__)
 
 OnStep = Callable[[str], None]
 
@@ -95,7 +101,7 @@ class VeilleState(TypedDict):
 
 
 def _emit(state: VeilleState, message: str) -> None:
-    print(f"\n{message}")
+    logger.info(message)
     on_step = state.get("on_step")
     if on_step is not None:
         on_step(message)
@@ -112,7 +118,7 @@ def discovery_node(state: VeilleState) -> VeilleState:
         duration_s=round((datetime.now() - t).total_seconds(), 2),
         detail=f"{len(competitors)} concurrents",
     )
-    print(f"   ✅ {len(competitors)} concurrents trouvés")
+    logger.info("✅ %d concurrents trouvés", len(competitors))
     return state
 
 
@@ -122,7 +128,7 @@ def scraper_node(state: VeilleState) -> VeilleState:
     web_data = state["services"].scraper.scrape_all(state["competitors"])
     state["web_data"] = web_data
     state["trace"]["scraper"] = StepTrace(duration_s=round((datetime.now() - t).total_seconds(), 2))
-    print(f"   ✅ {len(web_data)} sites scrapés")
+    logger.info("✅ %d sites scrapés", len(web_data))
     return state
 
 
@@ -132,7 +138,7 @@ def social_node(state: VeilleState) -> VeilleState:
     social_data = state["services"].social.collect_all(state["competitors"])
     state["social_data"] = social_data
     state["trace"]["social"] = StepTrace(duration_s=round((datetime.now() - t).total_seconds(), 2))
-    print(f"   ✅ Données sociales collectées")
+    logger.info("✅ Données sociales collectées")
     return state
 
 
@@ -146,7 +152,7 @@ def diff_node(state: VeilleState) -> VeilleState:
         duration_s=round((datetime.now() - t).total_seconds(), 2),
         detail=f"{changed}/{len(diffs)} changé(s)",
     )
-    print(f"   ✅ {changed}/{len(diffs)} concurrent(s) avec changements")
+    logger.info("✅ %d/%d concurrent(s) avec changements", changed, len(diffs))
     return state
 
 
@@ -156,7 +162,7 @@ def analysis_node(state: VeilleState) -> VeilleState:
     analysis = state["services"].analysis.analyze(state["diffs"])
     state["analysis"] = analysis
     state["trace"]["analysis"] = StepTrace(duration_s=round((datetime.now() - t).total_seconds(), 2))
-    print(f"   ✅ Analyse terminée")
+    logger.info("✅ Analyse terminée")
     return state
 
 
@@ -201,11 +207,7 @@ def run(
     on_step: OnStep | None = None,
     services: Services | None = None,
 ) -> VeilleState:
-    print(f"\n{'='*55}")
-    print(f"  🕵️  Veille Concurrentielle — LangGraph")
-    print(f"  Secteur : {sector}")
-    print(f"  Concurrents max : {max_competitors}")
-    print(f"{'='*55}")
+    logger.info("🕵️  Veille Concurrentielle — secteur=%r max_competitors=%d", sector, max_competitors)
 
     app = build_graph()
 
@@ -226,11 +228,7 @@ def run(
     final_state = app.invoke(initial_state)
 
     total = sum(t.duration_s for t in final_state["trace"].values())
-
-    print(f"\n{'='*55}")
-    print(f"  ✅ Rapport généré : {final_state['report_path']}")
-    print(f"  ⏱️  Durée totale : {total:.1f}s")
-    print(f"{'='*55}\n")
+    logger.info("✅ Rapport généré : %s (durée totale %.1fs)", final_state["report_path"], total)
 
     return final_state
 

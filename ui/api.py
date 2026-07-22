@@ -5,6 +5,7 @@ Routes : scan, rapports, concurrents, historique, planification
 
 import sys
 import json
+import logging
 import os
 from pathlib import Path
 from datetime import datetime
@@ -18,11 +19,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from apscheduler.schedulers.background import BackgroundScheduler
 
+from logging_config import configure_logging
+configure_logging()
+
 from adapters.notify.composite_notifier import CompositeNotifier
 from adapters.notify.discord_notifier import DiscordWebhookNotifier
 from adapters.notify.email_notifier import SmtpEmailNotifier
 from adapters.notify.slack_notifier import SlackWebhookNotifier
 from application.notify import NotificationService
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Veille Agent API")
 
@@ -128,6 +134,7 @@ def run_scan_background(sector: str, max_competitors: int):
         scan_status = {"running": False, "sector": sector, "step": "✅ Terminé", "error": ""}
 
     except Exception as e:
+        logger.exception("Échec du scan pour le secteur %r", sector)
         scan_status = {"running": False, "sector": sector, "step": "Erreur", "error": str(e)}
 
 
@@ -159,7 +166,7 @@ def apply_schedule(config: dict):
             args=[config["sector"], config.get("max_competitors", 5)],
             id="weekly_scan",
         )
-        print(f"[SCHEDULE] Scan planifié : {config['day_of_week']} à {config['hour']}h00 — {config['sector']}")
+        logger.info("Scan planifié : %s à %sh00 — %s", config["day_of_week"], config["hour"], config["sector"])
 
 
 apply_schedule(load_schedule_config())
@@ -227,8 +234,8 @@ async def list_competitors():
                 "website": data.get("website", ""),
                 "last_scan": data.get("_saved_at", ""),
             })
-        except:
-            pass
+        except (json.JSONDecodeError, OSError):
+            logger.warning("Snapshot illisible ignoré : %s", f, exc_info=True)
     return sorted(competitors, key=lambda x: x["last_scan"], reverse=True)
 
 

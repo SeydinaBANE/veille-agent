@@ -1,9 +1,12 @@
 """Use case — compare les nouvelles données aux snapshots précédents."""
 
+import logging
 from datetime import datetime
 
 from domain.models import ChangeSignal, ChangeType, CompetitorDiff, CompetitorSnapshot, SocialData, WebData
 from domain.ports import SnapshotRepository
+
+logger = logging.getLogger(__name__)
 
 _SIMILARITY_THRESHOLD = 0.85
 _SAMPLE_SIZE = 500
@@ -23,7 +26,7 @@ class DiffService:
             diff = self._diff_competitor(web, social)
             diffs.append(diff)
             status = f"{len(diff.changes)} changement(s)" if diff.has_changes else "aucun changement"
-            print(f"   🔄 Diff {web.name} : {status}")
+            logger.info("Diff %s : %s", web.name, status)
 
         return diffs
 

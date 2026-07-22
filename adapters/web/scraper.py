@@ -1,11 +1,14 @@
 """Adapter web — implémente WebScraper via requests + BeautifulSoup."""
 
+import logging
 import re
 
 import requests
 from bs4 import BeautifulSoup
 
 from domain.models import Competitor, WebData
+
+logger = logging.getLogger(__name__)
 
 _HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -24,7 +27,7 @@ class HttpWebScraper:
         if not website:
             return WebData(name=name, website=None, homepage=None, pricing=None, error="pas d'URL")
 
-        print(f"   🌐 Scraping {name} ({website})...")
+        logger.info("Scraping %s (%s)...", name, website)
 
         homepage = self._fetch_page(website)
         pricing = self._first_matching_page(website, _PRICING_PATHS, min_length=200)

@@ -1,9 +1,13 @@
 """Adapter de notification — envoie un message via un webhook Discord."""
 
+import logging
+
 import requests
 
 from domain.models import CompetitorAnalysis
 from domain.notification import build_message
+
+logger = logging.getLogger(__name__)
 
 
 class DiscordWebhookNotifier:
@@ -17,6 +21,6 @@ class DiscordWebhookNotifier:
         message = build_message(sector, high_priority, report_path)
         try:
             requests.post(self._webhook_url, json={"content": message}, timeout=10)
-            print("[NOTIFY] Discord envoyé")
-        except requests.RequestException as e:
-            print(f"[NOTIFY] Discord error: {e}")
+            logger.info("Discord envoyé")
+        except requests.RequestException:
+            logger.exception("Échec d'envoi de la notification Discord")
