@@ -91,6 +91,7 @@ class VeilleState(TypedDict):
     report_path: str                    # Chemin du rapport généré
     trace: dict[str, StepTrace]          # Métriques d'exécution
     on_step: OnStep | None               # Callback de progression (UI)
+    services: Services                  # Use cases injectés (composition root)
 
 
 def _emit(state: VeilleState, message: str) -> None:
@@ -105,7 +106,7 @@ def _emit(state: VeilleState, message: str) -> None:
 def discovery_node(state: VeilleState) -> VeilleState:
     _emit(state, "🔍 [DISCOVERY] Identification des concurrents...")
     t = datetime.now()
-    competitors = _get_services().discovery.discover(state["sector"], state["max_competitors"])
+    competitors = state["services"].discovery.discover(state["sector"], state["max_competitors"])
     state["competitors"] = competitors
     state["trace"]["discovery"] = StepTrace(
         duration_s=round((datetime.now() - t).total_seconds(), 2),
@@ -118,7 +119,7 @@ def discovery_node(state: VeilleState) -> VeilleState:
 def scraper_node(state: VeilleState) -> VeilleState:
     _emit(state, "🌐 [SCRAPER] Scraping des sites web...")
     t = datetime.now()
-    web_data = _get_services().scraper.scrape_all(state["competitors"])
+    web_data = state["services"].scraper.scrape_all(state["competitors"])
     state["web_data"] = web_data
     state["trace"]["scraper"] = StepTrace(duration_s=round((datetime.now() - t).total_seconds(), 2))
     print(f"   ✅ {len(web_data)} sites scrapés")
@@ -128,7 +129,7 @@ def scraper_node(state: VeilleState) -> VeilleState:
 def social_node(state: VeilleState) -> VeilleState:
     _emit(state, "📱 [SOCIAL] Collecte des posts sociaux...")
     t = datetime.now()
-    social_data = _get_services().social.collect_all(state["competitors"])
+    social_data = state["services"].social.collect_all(state["competitors"])
     state["social_data"] = social_data
     state["trace"]["social"] = StepTrace(duration_s=round((datetime.now() - t).total_seconds(), 2))
     print(f"   ✅ Données sociales collectées")
@@ -138,7 +139,7 @@ def social_node(state: VeilleState) -> VeilleState:
 def diff_node(state: VeilleState) -> VeilleState:
     _emit(state, "🔄 [DIFF] Comparaison avec snapshots précédents...")
     t = datetime.now()
-    diffs = _get_services().diff.diff_all(state["web_data"], state["social_data"])
+    diffs = state["services"].diff.diff_all(state["web_data"], state["social_data"])
     state["diffs"] = diffs
     changed = sum(1 for d in diffs if d.has_changes)
     state["trace"]["diff"] = StepTrace(
@@ -152,7 +153,7 @@ def diff_node(state: VeilleState) -> VeilleState:
 def analysis_node(state: VeilleState) -> VeilleState:
     _emit(state, "🎯 [ANALYSIS] Analyse stratégique des signaux...")
     t = datetime.now()
-    analysis = _get_services().analysis.analyze(state["diffs"])
+    analysis = state["services"].analysis.analyze(state["diffs"])
     state["analysis"] = analysis
     state["trace"]["analysis"] = StepTrace(duration_s=round((datetime.now() - t).total_seconds(), 2))
     print(f"   ✅ Analyse terminée")
@@ -162,7 +163,7 @@ def analysis_node(state: VeilleState) -> VeilleState:
 def report_node(state: VeilleState) -> VeilleState:
     _emit(state, "📝 [REPORT] Génération du rapport...")
     t = datetime.now()
-    report_path = _get_services().report.generate(state["sector"], state["analysis"])
+    report_path = state["services"].report.generate(state["sector"], state["analysis"])
     state["report_path"] = report_path
     state["trace"]["report"] = StepTrace(duration_s=round((datetime.now() - t).total_seconds(), 2))
     return state
@@ -194,7 +195,12 @@ def build_graph():
 
 # ─── Entry point ─────────────────────────────────────────────────────────────
 
-def run(sector: str, max_competitors: int = 5, on_step: OnStep | None = None) -> VeilleState:
+def run(
+    sector: str,
+    max_competitors: int = 5,
+    on_step: OnStep | None = None,
+    services: Services | None = None,
+) -> VeilleState:
     print(f"\n{'='*55}")
     print(f"  🕵️  Veille Concurrentielle — LangGraph")
     print(f"  Secteur : {sector}")
@@ -214,6 +220,7 @@ def run(sector: str, max_competitors: int = 5, on_step: OnStep | None = None) ->
         "report_path": "",
         "trace": {},
         "on_step": on_step,
+        "services": services if services is not None else _get_services(),
     }
 
     final_state = app.invoke(initial_state)
