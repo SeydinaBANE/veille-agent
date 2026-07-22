@@ -17,14 +17,17 @@ load_dotenv()
 
 from adapters.llm.openrouter import OpenRouterLLMClient
 from adapters.search.duckduckgo import DuckDuckGoSearchEngine
+from adapters.web.scraper import HttpWebScraper
 from application.discovery import DiscoveryService
-from scraper_agent.scraper import run_scraper
+from application.scraper import ScraperService
+from domain.models import Competitor
 from social_agent.social import run_social
 from diff_agent.diff import run_diff
 from analysis_agent.analysis import run_analysis
 from report_agent.report import run_report
 
 _discovery_service: DiscoveryService | None = None
+_scraper_service: ScraperService | None = None
 
 
 def _get_discovery_service() -> DiscoveryService:
@@ -35,6 +38,13 @@ def _get_discovery_service() -> DiscoveryService:
             search=DuckDuckGoSearchEngine(),
         )
     return _discovery_service
+
+
+def _get_scraper_service() -> ScraperService:
+    global _scraper_service
+    if _scraper_service is None:
+        _scraper_service = ScraperService(scraper=HttpWebScraper())
+    return _scraper_service
 
 
 # ─── State ───────────────────────────────────────────────────────────────────
@@ -66,8 +76,9 @@ def discovery_node(state: VeilleState) -> VeilleState:
 def scraper_node(state: VeilleState) -> VeilleState:
     print(f"\n🌐 [SCRAPER] Scraping des sites web...")
     t = datetime.now()
-    web_data = run_scraper(state["competitors"])
-    state["web_data"] = web_data
+    competitors = [Competitor(**c) for c in state["competitors"]]
+    web_data = _get_scraper_service().scrape_all(competitors)
+    state["web_data"] = [asdict(w) for w in web_data]
     state["trace"]["scraper"] = {"duration_s": round((datetime.now() - t).total_seconds(), 2)}
     print(f"   ✅ {len(web_data)} sites scrapés")
     return state
