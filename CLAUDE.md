@@ -71,13 +71,26 @@ Adapters correspondants : `adapters/llm/openrouter.py` (LLMClient), `adapters/se
 
 Les ports sont définis dans `domain/ports.py` (des `Protocol`, pas des classes de base) ; les entités dans `domain/models.py`.
 
+## Qualité de code
+
+```bash
+uv run ruff check .  # lint — zéro erreur avant de committer
+uv run mypy .         # typecheck — zéro erreur avant de committer
+```
+
+Un workflow GitHub Actions (`.github/workflows/ci.yml`) exécute ruff, mypy et pytest sur chaque push/PR vers `main`.
+
 ## Tests
 
 ```bash
-uv run pytest        # tests unitaires, chaque use case testé avec des doubles de ports
+uv run pytest
 ```
 
-Les tests ne mockent jamais les adapters concrets (requests, smtplib, anthropic) — ils injectent de faux ports (`FakeLLM`, `FakeSnapshotRepository`, etc.) directement dans les services `application/*`.
+Deux niveaux de tests, jamais de mock sur notre propre code :
+
+- **Use cases** (`application/*`) : testés avec de faux ports injectés directement (`FakeLLM`, `FakeSnapshotRepository`, `FakeWebScraper`...), aucun appel réseau.
+- **Adapters concrets** (`adapters/*`) : testés en mockant la librairie externe qu'ils enveloppent (`requests.get`/`post`, `smtplib.SMTP`, le SDK `anthropic`) — voir `tests/test_openrouter_llm.py`, `tests/test_web_scraper.py`, `tests/test_social_scraper.py`, `tests/test_*_notifier.py`.
+- `tests/test_pipeline_integration.py` fait tourner `main.run()` de bout en bout avec des doubles de ports injectés via le paramètre `services` de `run()`, sans clé API ni appel réseau.
 
 ## Détails techniques importants
 
@@ -85,4 +98,9 @@ Les tests ne mockent jamais les adapters concrets (requests, smtplib, anthropic)
 - **Logique de diff** : `application/diff.py` (`DiffService._text_changed`) compare les ensembles de mots des 500 premiers caractères ; une similarité < 85 % déclenche un signal de changement. Le premier scan crée toujours une baseline (pas de diff).
 - **Scraping social** : LinkedIn utilise la recherche DuckDuckGo en priorité, le scraping direct en fallback. Twitter utilise des instances Nitter publiques avec une liste de fallback.
 - **Snapshots** : le port `SnapshotRepository` prend directement le nom du concurrent (pas de slug) ; `adapters/storage/snapshot_repository.py` encapsule le `slugify()` et écrit dans `storage/snapshots/<slug>.json`. Exécuter le pipeline deux fois sur le même concurrent met à jour le snapshot — la deuxième exécution produit de vrais diffs.
+- **Retry/backoff** : `adapters/llm/openrouter.py` et `adapters/search/duckduckgo.py` (+ la recherche LinkedIn dans `adapters/social/scraper.py`) retentent jusqu'à 3 fois avec un backoff exponentiel (`tenacity`, 1 à 8s) sur les erreurs réseau transitoires (timeout, connexion, rate limit, 5xx). Les autres échecs (site inaccessible, Nitter down) gardent leur fallback existant sans retry.
+- **Logging** : `logging_config.configure_logging()` configure le root logger une seule fois (idempotent), appelé en tête de `main.py` et `ui/api.py`. Chaque module logge via `logging.getLogger(__name__)` — ne pas réintroduire de `print()`.
+- **Fail-fast config** : `main.py` (`_get_services`) lève un `RuntimeError` explicite si `OPENROUTER_API_KEY` est absente, plutôt qu'un `KeyError`.
+- **API web** : CORS restreint à `ALLOWED_ORIGINS` (défaut `http://localhost:8000`, pas de wildcard) ; `ScanRequest`/`ScheduleConfig` bornent `max_competitors` (1-20), `sector` (1-100 caractères) et `hour` (0-23) via des `Field` pydantic — un dépassement renvoie `422`. `GET /api/health` est sans dépendance externe (utilisé par le `HEALTHCHECK` Docker).
+- **Docker** : le conteneur tourne en utilisateur non-root (`appuser`, UID 1000, voir `Dockerfile`) ; `docker-compose.yml` définit un `healthcheck` et `restart: unless-stopped`.
 - **Tous les prompts LLM sont en français** — les réponses sont attendues en français.

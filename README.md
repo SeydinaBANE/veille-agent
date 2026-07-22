@@ -1,5 +1,7 @@
 # Veille Agent
 
+![CI](https://github.com/SeydinaBANE/veille-agent/actions/workflows/ci.yml/badge.svg)
+
 Pipeline de veille concurrentielle automatisé, orchestré avec **LangGraph**. À partir d'un secteur ou mot-clé, il identifie les concurrents, scrape leurs sites et réseaux sociaux, détecte les changements par rapport aux scans précédents, et produit un rapport Markdown stratégique.
 
 ## Architecture
@@ -58,6 +60,10 @@ Ouvre `http://localhost:8000` — 4 pages disponibles :
 | **Concurrents** | Liste des concurrents suivis avec date de dernier scan |
 | **Historique** | Tous les scans passés avec durée et nombre de changements détectés |
 
+`GET /api/health` renvoie `{"status": "ok"}` — utilisé par le `HEALTHCHECK` Docker/Compose, sans dépendance externe.
+
+Par défaut, l'API n'accepte que les requêtes CORS depuis `http://localhost:8000` (configurable via `ALLOWED_ORIGINS`). Un scan est borné à 1-20 concurrents et un secteur de 1-100 caractères (`422` sinon), pour éviter un déclenchement démesuré et coûteux en appels LLM.
+
 ### Planification automatique
 
 Depuis la page "Nouveau scan", active le scan automatique en choisissant un secteur, un jour et une heure. La config est persistée dans `storage/schedule.json`.
@@ -72,7 +78,7 @@ Quand un concurrent atteint un score ≥ 7/10, une alerte est envoyée automatiq
 | `SLACK_WEBHOOK_URL` | Slack |
 | `DISCORD_WEBHOOK_URL` | Discord |
 
-Les 3 sont optionnels — seuls les canaux configurés reçoivent la notification.
+Les 3 sont optionnels — seuls les canaux configurés reçoivent la notification (chaque échec d'envoi est loggé mais n'interrompt jamais le scan).
 
 ## Utilisation CLI
 
@@ -88,11 +94,38 @@ uv run python main.py "cybersécurité PME"
 
 Le rapport est généré dans `output/reports/rapport_<date>_<secteur>.md`.
 
+## Déploiement Docker
+
+```bash
+docker compose up --build
+```
+
+Sert l'interface web sur `http://localhost:8000`. Le conteneur :
+
+- tourne en utilisateur non-root (`appuser`, UID 1000) ;
+- expose un `HEALTHCHECK` (`GET /api/health`, toutes les 30s) — visible via `docker compose ps` ;
+- redémarre automatiquement (`restart: unless-stopped`) ;
+- persiste `storage/snapshots/` et `output/reports/` via des volumes montés depuis l'hôte.
+
+Les variables d'environnement viennent du `.env` à la racine (`env_file` dans `docker-compose.yml`). Pour construire l'image seule : `docker build -t veille-agent .`.
+
+## Qualité de code & CI
+
+```bash
+uv run ruff check .   # lint
+uv run mypy .         # typecheck
+uv run pytest         # tests unitaires
+```
+
+Un workflow GitHub Actions (`.github/workflows/ci.yml`) exécute ces trois commandes sur chaque push/PR vers `main`.
+
 ## Structure
 
 ```
 veille-agent/
 ├── main.py                          # Composition root CLI + StateGraph LangGraph
+├── logging_config.py                # Configuration centralisée du logging
+├── healthcheck.py                   # Script appelé par le HEALTHCHECK Docker
 ├── ui/
 │   ├── api.py                       # Composition root FastAPI (routes + scheduler)
 │   └── templates/
@@ -106,13 +139,15 @@ veille-agent/
 │   ├── diff.py / analysis.py / report.py
 │   └── notify.py
 ├── adapters/                        # Implémentations concrètes des ports
-│   ├── llm/openrouter.py            # LLMClient via OpenRouter
-│   ├── search/duckduckgo.py         # SearchEngine
+│   ├── llm/openrouter.py            # LLMClient via OpenRouter (retry/backoff)
+│   ├── search/duckduckgo.py         # SearchEngine (retry/backoff)
 │   ├── web/scraper.py               # WebScraper
 │   ├── social/scraper.py            # SocialScraper (LinkedIn, Twitter/Nitter)
 │   ├── storage/                     # SnapshotRepository, ReportRepository (JSON/Markdown)
 │   └── notify/                      # Notifier (email SMTP, Slack, Discord, composite)
-├── tests/                           # Tests unitaires (doubles de ports, pas de mocks d'infra)
+├── tests/                           # Tests unitaires + intégration
+├── .github/workflows/ci.yml         # Lint (ruff) + typecheck (mypy) + tests sur push/PR
+├── Dockerfile / docker-compose.yml  # Image non-root + healthcheck
 ├── storage/
 │   ├── snapshots/                   # Données persistées par concurrent
 │   └── schedule.json                # Config planification automatique
@@ -125,15 +160,25 @@ veille-agent/
 uv run pytest
 ```
 
+Les use cases (`application/*`) sont testés avec des doubles de ports (`FakeLLM`, `FakeSnapshotRepository`...). Les adapters concrets (`adapters/*`) sont testés en mockant la librairie externe (`requests`, `smtplib`, SDK Anthropic) — jamais notre propre code.
+
+## Observabilité & résilience
+
+- **Logging** : tous les modules loggent via `logging` (configuré une fois dans `logging_config.py`, appelé depuis `main.py` et `ui/api.py`) — plus de `print()`.
+- **Retry/backoff** : les appels réseau vers OpenRouter (LLM) et DuckDuckGo (recherche) retentent automatiquement jusqu'à 3 fois avec un backoff exponentiel (1 à 8s) sur les erreurs transitoires (timeout, connexion, rate limit, 5xx).
+- **Fail-fast** : si `OPENROUTER_API_KEY` est absente, le pipeline échoue immédiatement avec un message explicite plutôt qu'un `KeyError`.
+
 ## Variables d'environnement
 
 | Variable | Description |
 |---|---|
 | `OPENROUTER_API_KEY` | Clé API OpenRouter (obligatoire) |
+| `ALLOWED_ORIGINS` | Origines CORS autorisées pour l'API web, séparées par des virgules (défaut : `http://localhost:8000`) |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` | Config SMTP pour les notifications email |
 | `NOTIFY_EMAIL` | Destinataire des alertes email |
 | `SLACK_WEBHOOK_URL` | Webhook Slack |
 | `DISCORD_WEBHOOK_URL` | Webhook Discord |
+| `PORT` | Port d'écoute HTTP en conteneur (défaut : `8000`) |
 
 ## Exemple de rapport généré
 
@@ -154,4 +199,4 @@ Stripe a modifié sa page de tarification et publié 3 nouveaux articles...
 
 ## Licence
 
-MIT
+[MIT](LICENSE)
