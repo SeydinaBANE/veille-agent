@@ -69,7 +69,12 @@ _services: Services | None = None
 def _get_services() -> Services:
     global _services
     if _services is None:
-        api_key = os.environ["OPENROUTER_API_KEY"]
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        if not api_key:
+            raise RuntimeError(
+                "OPENROUTER_API_KEY manquante. Copie .env.example vers .env et renseigne ta clé "
+                "OpenRouter (https://openrouter.ai) avant de lancer un scan."
+            )
         _services = Services(
             discovery=DiscoveryService(
                 llm=OpenRouterLLMClient(api_key=api_key, model="anthropic/claude-haiku-4-5"),
