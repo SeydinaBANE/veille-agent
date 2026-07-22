@@ -179,6 +179,11 @@ async def index():
     return FileResponse("ui/templates/index.html")
 
 
+@app.get("/api/health")
+async def health():
+    return {"status": "ok"}
+
+
 @app.post("/api/scan")
 async def start_scan(req: ScanRequest, background_tasks: BackgroundTasks):
     if scan_status["running"]:
