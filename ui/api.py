@@ -17,7 +17,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from logging_config import configure_logging  # noqa: E402
 
@@ -34,9 +34,11 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Veille Agent API")
 
+_allowed_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:8000").split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -76,16 +78,16 @@ def save_scan_log(entry: dict):
 # ─── Models ──────────────────────────────────────────────────────────────────
 
 class ScanRequest(BaseModel):
-    sector: str
-    max_competitors: int = 5
+    sector: str = Field(min_length=1, max_length=100)
+    max_competitors: int = Field(default=5, ge=1, le=20)
 
 
 class ScheduleConfig(BaseModel):
     enabled: bool
-    sector: str
-    max_competitors: int = 5
+    sector: str = Field(min_length=1, max_length=100)
+    max_competitors: int = Field(default=5, ge=1, le=20)
     day_of_week: str = "monday"
-    hour: int = 8
+    hour: int = Field(default=8, ge=0, le=23)
 
 
 # ─── Notifications ───────────────────────────────────────────────────────────
